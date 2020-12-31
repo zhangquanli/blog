@@ -1,3 +1,53 @@
+# Unsafe介绍
+
+在Oracle的jdk8无法获取到sun.misc包的源码，想看此包的源码可以直接下载openjdk，包的路径是：`openjdk\jdk\src\share\classes\sun\misc`。
+
+sun.misc包含了低级（native硬件级别的原子操作）、不安全的操作集合。
+
+Java无法直接访问到操作系统底层（如系统硬件等)，为此Java使用native方法来扩展Java程序的功能。Unsafe类提供了硬件级别的原子操作，提供了一些绕开JVM的更底层功能，由此提高效率。
+
+# Unsafe的使用建议
+
+使用Unsafe要注意以下几个问题：
+
+- 1、Unsafe有可能在未来的Jdk版本移除或者不允许Java应用代码使用，这一点可能导致使用了Unsafe的应用无法运行在高版本的Jdk。
+- 2、Unsafe的不少方法中必须提供原始地址(内存地址)和被替换对象的地址，偏移量要自己计算，一旦出现问题就是JVM崩溃级别的异常，会导致整个JVM实例崩溃，表现为应用程序直接crash掉。
+- 3、Unsafe提供的直接内存访问的方法中使用的内存不受JVM管理(无法被GC)，需要手动管理，一旦出现疏忽很有可能成为内存泄漏的源头。
+
+暂时总结出以上三点问题。Unsafe在JUC(java.util.concurrent)包中大量使用(主要是CAS)，在netty中方便使用直接内存，还有一些高并发的交易系统为了提高CAS的效率也有可能直接使用到Unsafe。总而言之，Unsafe类是一把双刃剑。
+
+# Unsafe详解
+
+## 初始化代码
+
+```java
+private static native void registerNatives();
+static {
+    registerNatives();
+    sun.reflect.Reflection.registerMethodsToFilter(Unsafe.class, "getUnsafe");
+}
+
+private Unsafe() {}
+
+private static final Unsafe theUnsafe = new Unsafe();
+
+@CallerSensitive
+public static Unsafe getUnsafe() {
+    Class<?> caller = Reflection.getCallerClass();
+    if (!VM.isSystemDomainLoader(caller.getClassLoader()))
+        throw new SecurityException("Unsafe");
+    return theUnsafe;
+}
+```
+
+ 初始化的代码主要包括调用JVM本地方法`registerNatives()`和`sun.reflect.Reflection#registerMethodsToFilter`。然后新建一个Unsafe实例命名为`theUnsafe`，通过静态方法`getUnsafe()`获取，获取的时候需要做权限判断。由此可见，Unsafe使用了单例设计(可见构造私有化了)。Unsafe类做了限制，如果是普通的调用的话，它会抛出一个SecurityException异常；只有由主类加载器(BootStrap classLoader)加载的类才能调用这个类中的方法。最简单的使用方式是基于反射获取Unsafe实例。 
+
+```java
+
+```
+
+
+
 # Unsafe源码
 
 ```java
